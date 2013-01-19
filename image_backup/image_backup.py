@@ -32,10 +32,9 @@ parser.add_argument("--username", "-u",  help="The account's username")
 parser.add_argument("--server-id", "-s", action="append", help="The ID of the server to back up. "
         "You may specify this parameter multiple times to back up multiple servers.")
 parser.add_argument("--retain", "-r", type=int, help="Number of backups to retain")
-parser.add_argument("--persist", "-p", action="store_true", help="Write the passed values for future runs")
+parser.add_argument("--persist", "-p", action="store_true", help="Store the values specified in "
+        "this call to be used as the default in future runs.")
 args = parser.parse_args()
-
-pyrax.utils.trace()
 
 username = args.username or keyring.get_password("pyrax", ACCOUNT_NAME)
 instance_ids = args.server_id or keyring.get_password("pyrax", ID_OF_INSTANCE)
@@ -70,14 +69,14 @@ pyrax.set_http_debug(False)
 
 if not instance_ids:
     print "Please enter the ID of the server(s) to backup. You may enter more "\
-            "than one ID, separated by spaces. ")
+            "than one ID, separated by spaces. "
     input_ids = raw_input()
     if not input_ids:
         logit("Cannot continue without ID of instance.")
         sys.exit()
     # Strip commas, in case they added them to the input
     input_ids = input_ids.replace(",", "")
-    instance_ids = instance_ids.split(" ")
+    instance_ids = [iid.strip() for iid in instance_ids.split(" ")]
     keyring.set_password("pyrax", ID_OF_INSTANCE, json.dumps([instance_ids]))
 
 if not num_copies:

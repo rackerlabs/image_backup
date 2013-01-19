@@ -2,6 +2,11 @@
 
 This script allows you to have scheduled image backups of your server. It is meant to be run as a cron job.
 
+It requires [`pyrax`](https://github.com/rackspace/pyrax), the Python SDK for the Rackspace Cloud.
+
+
+## Getting Started
+
 The first time it is run, it will ask for:
 
 * Your account username
@@ -17,23 +22,26 @@ Once these are entered, these values will be stored and will not need to be ente
 You may also enter them on the command line as arguments if you prefer:
 
     -h, --help          show this help message and exit
-    
+
     --username USERNAME, -u USERNAME
                         The account's username
-    
+
     --server-id SERVER_ID, -s SERVER_ID
                         The ID of the server to back up. You may specify this
                         parameter multiple times to back up multiple servers.
-    
+
     --retain RETAIN, -r RETAIN
                         Number of backups to retain
-    
-    --persist, -p       Write the passed values for future runs
+
+    --persist, -p       Store the values specified in this call to be used as
+                        the default in future runs.
 
 
 ## Adding to cron
 
 To schedule the backup image creation, add a cron job. If you are unfamiliar with `cron`, it is a built-in utility for running programs at regular intervals.
+
+**You should have already run the script at least once** manually in order to establish your username, API key, server(s) to backup, and number of backup images to retain.
 
 To add a daily backup, run `crontab -e`, and add the following line:
 
