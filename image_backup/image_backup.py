@@ -69,10 +69,15 @@ except exc.AuthenticationFailed:
 pyrax.set_http_debug(False)
 
 if not instance_ids:
-    instance_ids = raw_input("Please enter the ID of the server to backup: ")
-    if not instance_ids:
+    print "Please enter the ID of the server(s) to backup. You may enter more "\
+            "than one ID, separated by spaces. ")
+    input_ids = raw_input()
+    if not input_ids:
         logit("Cannot continue without ID of instance.")
         sys.exit()
+    # Strip commas, in case they added them to the input
+    input_ids = input_ids.replace(",", "")
+    instance_ids = instance_ids.split(" ")
     keyring.set_password("pyrax", ID_OF_INSTANCE, json.dumps([instance_ids]))
 
 if not num_copies:
