@@ -54,6 +54,6 @@ You can easily schedule regular backup images for multiple servers by passing th
 
 You have 3 servers which you want to back up every night at 11pm, retaining the 10 most recent backup images. You also have a single server which only requires weekly backup on Sundays, and you wish to retain the most recent 4 images for that server. Your cron entries to do this would be:
 
-    0 11 * * *  /usr/bin/python /path/to/image_backup.py -s AAAAA-AAAAA -s BBBBB-BBBBB -s CCCCC-CCCCC -r 10
-    0 11 * * 0  /usr/bin/python /path/to/image_backup.py -s DDDDD-DDDDD -r 4
+    0 23 * * *  /usr/bin/python /path/to/image_backup.py -s AAAAA-AAAAA -s BBBBB-BBBBB -s CCCCC-CCCCC -r 10
+    0 23 * * 0  /usr/bin/python /path/to/image_backup.py -s DDDDD-DDDDD -r 4
 
