@@ -17,8 +17,13 @@ logger.setLevel(logging.DEBUG)
 handler = logging.handlers.SysLogHandler()
 logger.addHandler(handler)
 
+# If running under cron, 'INTERACTIVE' will be False
+INTERACTIVE = os.isatty(sys.stdin.fileno())
+
 
 def logit(msg):
+    if INTERACTIVE:
+        print msg
     logger.info("RackspaceImageScheduler: %s" % msg)
 
 
@@ -38,7 +43,7 @@ class SettingsHolder(object):
                 dct = json.load(cfile)
         except (IOError, ValueError) as e:
             logit("Could not read config file: %s" % e)
-            return
+            dct = {}
         self.from_dict(dct)
         # Override with any non-None args
         for arg in ("username", "api_key", "server_id", "backup_count"):
@@ -82,113 +87,114 @@ class SettingsHolder(object):
 
 
 def main():
-    try:
-        parser = argparse.ArgumentParser(description="Run regularly scheduled images of a cloud server.")
-        parser.add_argument("--username", "-u",  help="The account's username")
-        parser.add_argument("--api-key", "-k",  help="The account's API key")
-        parser.add_argument("--server-id", "-s", action="append", help="The ID of the server to back up. "
-                "You may specify this parameter multiple times to back up multiple servers.")
-        parser.add_argument("--backup_count", "-b", type=int, help="Number of backups to retain per server.")
-        parser.add_argument("--persist", "-p", action="store_true", help="Store the values specified in "
-                "this call to be used as the default in future runs.")
-        args = parser.parse_args()
+    parser = argparse.ArgumentParser(description="Run regularly scheduled images of a cloud server.")
+    parser.add_argument("--username", "-u",  help="The account's username")
+    parser.add_argument("--api-key", "-k",  help="The account's API key")
+    parser.add_argument("--server-id", "-s", action="append", help="The ID of the server to back up. "
+            "You may specify this parameter multiple times to back up multiple servers.")
+    parser.add_argument("--backup-count", "-b", type=int, help="Number of backups to retain per server. "
+            "After this limit is reached, the oldest backups will be deleted.")
+    parser.add_argument("--persist", "-p", action="store_true", help="Store the values specified as "
+            "parameters in this call to be used as the default in future runs.")
+    args = parser.parse_args()
 
-        settings = SettingsHolder(args)
+    settings = SettingsHolder(args)
 
-        if isinstance(settings.instance_ids, basestring):
-            settings.instance_ids = json.loads(settings.instance_ids)
-        if args.persist:
-            settings.save()
+    if isinstance(settings.instance_ids, basestring):
+        settings.instance_ids = json.loads(settings.instance_ids)
+    if args.persist:
+        settings.save()
 
-        # If running under cron, 'interactive' will be False
-        interactive = os.isatty(sys.stdin.fileno())
-
-        if interactive:
+    if INTERACTIVE:
+        if not settings.username:
+            settings.username = raw_input("Please enter the account username: ")
             if not settings.username:
-                settings.username = raw_input("Please enter the account username: ")
-                if not settings.username:
-                    logit("Cannot continue without account username.")
-                    sys.exit()
+                logit("Cannot continue without account username.")
+                sys.exit()
+        if not settings.api_key:
+            settings.api_key = raw_input("Please enter the account API key: ")
             if not settings.api_key:
-                settings.api_key = raw_input("Please enter the account API key: ")
-                if not settings.api_key:
-                    logit("Cannot continue without account API key.")
-                    sys.exit()
-
-            if not settings.instance_ids:
-                print " ".join(["Please enter the ID of the server(s) to backup.",
-                        "You may enter more than one ID, separated by spaces."])
-                input_ids = raw_input()
-                if not input_ids:
-                    logit("Cannot continue without ID of instance.")
-                    sys.exit()
-                # Strip commas, in case they added them to the input
-                input_ids = input_ids.replace(",", "")
-                settings.instance_ids = [iid.strip() for iid in instance_ids.split(" ")]
-
-            if not settings.backup_count:
-                settings.backup_count = raw_input("How many backup images should be retained? ")
-                if not settings.backup_count:
-                    logit("Cannot continue without backup count.")
-                    sys.exit()
-            settings.backup_count = int(settings.backup_count)
-        else:
-            # All values must be defined to continue
-            missing = settings.get_missing()
-            if missing:
-                logit("Could not continue; the following values are missing: %s" % missing)
+                logit("Cannot continue without account API key.")
                 sys.exit()
 
-        try:
-            pyrax.set_credentials(settings.username, settings.api_key)
-        except exc.AuthenticationFailed:
-            logit("Unable to authenticate.")
+        if not settings.instance_ids:
+            print " ".join(["Please enter the ID of the server(s) to backup.",
+                    "You may enter more than one ID, separated by spaces."])
+            input_ids = raw_input()
+            if not input_ids:
+                logit("Cannot continue without ID of instance.")
+                sys.exit()
+            # Strip commas, in case they added them to the input
+            input_ids = input_ids.replace(",", "")
+            settings.instance_ids = [iid.strip() for iid in instance_ids.split(" ")]
+
+        if not settings.backup_count:
+            settings.backup_count = raw_input("How many backup images should be retained? ")
+            if not settings.backup_count:
+                logit("Cannot continue without backup count.")
+                sys.exit()
+        settings.backup_count = int(settings.backup_count)
+    else:
+        # All values must be defined to continue
+        missing = settings.get_missing()
+        if missing:
+            logit("Could not continue; the following values are missing: %s" % missing)
             sys.exit()
-        # Turn off debug output
-        pyrax.set_http_debug(False)
 
-        #TODO: add support for other regions
-        cs_dfw = pyrax.connect_to_cloudservers("DFW")
-        cs_ord = pyrax.connect_to_cloudservers("ORD")
-        regions = (cs_dfw, cs_ord)
-        now = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    try:
+        pyrax.set_credentials(settings.username, settings.api_key)
+    except exc.AuthenticationFailed:
+        logit("Unable to authenticate.")
+        sys.exit()
+    # Turn off debug output
+    pyrax.set_http_debug(False)
 
-        for instance_id in settings.instance_ids:
-            for region in regions:
-                try:
-                    instance = region.servers.get(instance_id)
-                    logit("Found instance '%s' in region '%s'" % (instance.name, region.client.region_name))
-                    break
-                except exc.ServerNotFound:
-                    continue
+    #TODO: add support for other regions
+    cs_dfw = pyrax.connect_to_cloudservers("DFW")
+    cs_ord = pyrax.connect_to_cloudservers("ORD")
+    regions = (cs_dfw, cs_ord)
+    now = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
 
-            image_name = "%s-%s" % (instance.name, now)
-
-            images = region.images.list()
-            backups = [image for image in images
-                    if image.name.startswith(instance.name)]
-            # Sorting by name will result in the oldest first.
-            backups.sort(lambda x,y: cmp(x.name, y.name))
-
-            to_delete = []
-            # Don't delete just yet; the image creation step below
-            # could fail.
-            while len(backups) >= settings.backup_count:
-                to_delete.append(backups.pop(0))
-
+    for instance_id in settings.instance_ids:
+        for region in regions:
             try:
-                instance.create_image(image_name)
-                logit("Successfully created backup image: %s" % image_name)
-            except exc.ServerClientException as e:
-                logit("Unable to create image: %s" % e)
+                instance = region.servers.get(instance_id)
+                logit("Found instance '%s' in region '%s'" % (instance.name, region.client.region_name))
+                break
+            except exc.ServerNotFound:
                 continue
 
-            for old_image in to_delete:
-                old_image.delete()
-                logit("Deleted old image: %s" % old_image.name)
-    except Exception as e:
-        logit("Exception: %s" % e)
+        image_name = "%s-%s" % (instance.name, now)
+
+        images = region.images.list()
+        backups = [image for image in images
+                if image.name.startswith(instance.name)]
+        # Sorting by name will result in the oldest first.
+        backups.sort(lambda x,y: cmp(x.name, y.name))
+
+        to_delete = []
+        # Don't delete just yet; the image creation step below
+        # could fail.
+        while len(backups) >= settings.backup_count:
+            to_delete.append(backups.pop(0))
+
+        try:
+            instance.create_image(image_name)
+            logit("Successfully created backup image: %s" % image_name)
+        except exc.ServerClientException as e:
+            logit("Unable to create image: %s" % e)
+            continue
+
+        for old_image in to_delete:
+            old_image.delete()
+            logit("Deleted old image: %s" % old_image.name)
 
 
 if __name__ == "__main__":
-    main()
+    if not INTERACTIVE:
+        logit("Called from cron.")
+    try:
+        main()
+        logit("Done.")
+    except Exception as e:
+        logit("Exception: %s" % e)
