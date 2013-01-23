@@ -1,47 +1,93 @@
 # Cloud Server Backup Imaging
 
-This script allows you to have scheduled image backups of your server. It is meant to be run as a cron job.
+This script allows you to have scheduled image backups of your server. It is meant to be run as a cron job, but can also be run directly if desired.
 
 It requires [`pyrax`](https://github.com/rackspace/pyrax), the Python SDK for the Rackspace Cloud.
 
 
-## Getting Started
-
-The first time it is run, it will ask for:
-
-* Your account username
-* Your account API key
-* The ID of the server(s) to back up. You may enter more than one ID, separated by spaces.
-* The number of backup images to maintain for each server
-
-Once these are entered, these values will be stored and will not need to be entered again, unless you wish to change them.
-
-
 ## Command Line Arguments
 
-You may also enter them on the command line as arguments if you prefer:
+You will need to pass your cloud account credentials to the script, along with the ID (or IDs) of the server(s) you wish to back up. You must also specify how many backup images to retain for each server. Here is a listing of the parameters that image_backup accepts, and what they affect:
 
     -h, --help          show this help message and exit
 
     --username USERNAME, -u USERNAME
                         The account's username
 
+    --api-key API_KEY, -k API_KEY
+                        The account's API key
+
     --server-id SERVER_ID, -s SERVER_ID
                         The ID of the server to back up. You may specify this
                         parameter multiple times to back up multiple servers.
 
-    --retain RETAIN, -r RETAIN
-                        Number of backups to retain
+    --backup-count BACKUP_COUNT, -b BACKUP_COUNT
+                        Number of backups to retain per server. After this
+                        limit is reached, the oldest backups will be deleted.
 
-    --persist, -p       Store the values specified in this call to be used as
-                        the default in future runs.
+    --persist, -p       Store the values specified as parameters in this call
+                        to be used as the default in future runs.
+
+## Configuring
+
+There are two ways to configure this script. The first is to pass all the values that are needed as parameters with every call to the script, and the second is to pass them once and tell the script to persist them. If you choose the second option, future calls to the script will not need to pass credentials or server information, as the script will use the stored values.
+
+If you have the script store your information, you can always override those stored values by calling the script with whatever parameters you wish to change. Adding the '--persist' parameter will write those changes so that they are the defaults for any future call.
+
+
+## Getting the IDs of your Servers
+
+If you are already using pyrax to create cloud applications, then listing your servers and their IDs is straightforward:
+
+    servers = pyrax.cloudservers.servers.list()
+    for server in servers:
+        print server.name, server.id
+
+If you're not a Python developer, then go to the [Rackspace Cloud Control Panel](https://mycloud.rackspace.com), and on the page that lists your servers, hover the mouse over the server name. A small window will pop up that will show the server's name and ID:
+
+&nbsp; |
+---: |
+![server id screenshot](media/server_id.png) | 
+
+
+If you are using a mobile device or other browser that doesn't support hover, click on the server and note the URL of the page for the server details. It will look something like this:
+
+    https://mycloud.rackspace.com/a/your_account/#compute%2CcloudServersOpenStack%2CORD/d2f9339c-b3a1-4c40-8e05-c1448385d001
+
+Note the part after the last slash: that's the server's ID.
+
+
+## Scheduling backups for multiple servers
+
+You can specify the `--server-id` parameter multiple times in the call to image_backup: once for each server you wish to backup. The servers can be located in any datacenter.
+
+To illustrate, assume that you have 3 servers with the following IDs:
+
+    AAAAA-AAAAA
+    BBBBB-BBBBB
+    CCCCC-CCCCC
+
+Of course, actual IDs will be much longer, but these will do for this example.
+
+To configure image_backup to back up all three of these servers, run the following command:
+
+    python /path/to/image_backup.py \
+      --username your_username \
+      --api-key your_api_key \
+      --server-id AAAAA-AAAAA \
+      --server-id BBBBB-BBBBB \
+      --server-id CCCCC-CCCCC \
+      --backup-count 7 \
+      --persist
+
+Note that all three servers were included, each with its own `--server-id` parameter label. The inclusion of `--persist` ensures that these values are stored as defaults so that future calls will not need to specify any of these values again.
 
 
 ## Adding to cron
 
 To schedule the backup image creation, add a cron job. If you are unfamiliar with `cron`, it is a built-in utility for running programs at regular intervals.
 
-**You should have already run the script at least once** manually in order to establish your username, API key, server(s) to backup, and number of backup images to retain.
+If you run the script manually first with the 'persist' option, your username, API key, server(s) to backup, and number of backup images to retain will be stored, and the line in your cron file will not need to include any parameters. Otherwise you will have to include all the values needed by the script as parameters in your cron entry. The examples below assume that you have run and stored all the required values already.
 
 To add a daily backup, run `crontab -e`, and add the following line:
 
@@ -56,12 +102,10 @@ For a weekly backup, change the last asterisk to a value between 0-6 (Sunday-Sat
 This will run the script every Friday at 10:40 pm.
 
 
-## Scheduling backups for multiple servers
+## Debugging Problems
 
-You can easily schedule regular backup images for multiple servers by passing the individual parameters to the cron command. Consider this example:
+After running the script you can go to the Rackspace Cloud Control Panel, and on each server's page, you can click the 'View Images' link to see the backup images. All backups are named in this format: `server_name-datetime`. The datetime value is in YYYYMMDDHHMMSS format.
 
-You have 3 servers which you want to back up every night at 11pm, retaining the 10 most recent backup images. You also have a single server which only requires weekly backup on Sundays, and you wish to retain the most recent 4 images for that server. Your cron entries to do this would be:
+If the images are not being created as expected, you can run the script manually, and it will print out any error information it encounters. You can also check the system logs for any entries from the script. Each syslog entry created by the script is prefixed with the word "RackspaceImageScheduler", so searching for the script's output is simple.
 
-    0 23 * * *  /usr/bin/python /path/to/image_backup.py -s AAAAA-AAAAA -s BBBBB-BBBBB -s CCCCC-CCCCC -r 10
-    0 23 * * 0  /usr/bin/python /path/to/image_backup.py -s DDDDD-DDDDD -r 4
-
+If that information isn't enough to help you figure out what the problem is, or you have any other problems, please [open an issue on GitHub](https://github.com/rackspace/image_backup/issues) and we'll try to answer it as soon as possible.
